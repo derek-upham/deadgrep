@@ -129,6 +129,8 @@ overflow on our regexp matchers if we don't apply this.")
 (put 'deadgrep--search-case 'permanent-local t)
 (defvar-local deadgrep--file-type 'all)
 (put 'deadgrep--file-type 'permanent-local t)
+(defvar-local deadgrep--search-paths nil)
+(put 'deadgrep--search-paths 'permanent-local t)
 
 (defvar-local deadgrep--context nil
   "When set, also show context of results.
@@ -605,7 +607,7 @@ with a text face property `deadgrep-match-face'."
   (setq text (substring-no-properties text))
   (apply #'make-text-button text nil :type type properties))
 
-(defun deadgrep--arguments (search-term search-type case context)
+(defun deadgrep--arguments (search-term search-type case paths context)
   "Return a list of command line arguments that we can execute in a shell
 to obtain ripgrep results."
   (let (args)
@@ -650,9 +652,8 @@ to obtain ripgrep results."
 
     (push "--" args)
     (push search-term args)
-    (push "." args)
 
-    (nreverse args)))
+    (append (nreverse args) paths)))
 
 (defun deadgrep--write-heading ()
   "Write the deadgrep heading with buttons reflecting the current
@@ -833,9 +834,10 @@ Returns a list ordered by the most recently accessed."
             ;; visited first.
             (buffer-list)))
 
-(defun deadgrep--buffer (search-term directory initial-filename)
+(defun deadgrep--buffer (search-term paths initial-filename)
   "Create and initialise a search results buffer."
-  (let* ((buf-name (deadgrep--buffer-name search-term directory))
+  (let* ((prime-directory (car paths))
+         (buf-name (deadgrep--buffer-name search-term prime-directory))
          (buf (get-buffer buf-name)))
     (if buf
         ;; There was already a buffer with this name. Reset its search
@@ -855,7 +857,7 @@ Returns a list ordered by the most recently accessed."
         (setq buf (get-buffer-create buf-name))))
 
     (with-current-buffer buf
-      (setq default-directory directory)
+      (setq default-directory prime-directory)
       (let ((inhibit-read-only t))
         ;; This needs to happen first, as it clobbers all buffer-local
         ;; variables.
@@ -864,7 +866,8 @@ Returns a list ordered by the most recently accessed."
 
         (setq deadgrep--search-term search-term)
         (setq deadgrep--current-file nil)
-        (setq deadgrep--initial-filename initial-filename))
+        (setq deadgrep--initial-filename initial-filename)
+        (setq deadgrep--search-paths paths))
       (setq buffer-read-only t))
     buf))
 
@@ -1292,13 +1295,13 @@ matches (if the result line has been truncated)."
   (interactive)
   (deadgrep--move-match nil 'deadgrep-match-face))
 
-(defun deadgrep--start (search-term search-type case)
+(defun deadgrep--start (search-term search-type case paths)
   "Start a ripgrep search."
   (setq deadgrep--spinner (spinner-create 'progress-bar t))
   (setq deadgrep--running t)
   (spinner-start deadgrep--spinner)
   (let* ((args (deadgrep--arguments
-                search-term search-type case
+                search-term search-type case paths
                 deadgrep--context))
          (command (format "%s %s" deadgrep-executable (s-join " " args)))
          (process
@@ -1356,7 +1359,8 @@ matches (if the result line has been truncated)."
       (deadgrep--start
        deadgrep--search-term
        deadgrep--search-type
-       deadgrep--search-case))))
+       deadgrep--search-case
+       deadgrep--search-paths))))
 
 (defun deadgrep--read-search-term ()
   "Read a search term from the minibuffer.
@@ -1441,10 +1445,11 @@ Otherwise, return PATH as is."
 If called with a prefix argument, create the results buffer but
 don't actually start the search."
   (interactive (list (deadgrep--read-search-term)))
-  (let* ((dir (funcall deadgrep-project-root-function))
+  (let* ((path-or-paths (funcall deadgrep-project-root-function))
+         (paths (mapcar 'expand-file-name (if (consp path-or-paths) path-or-paths (list path-or-paths))))
          (buf (deadgrep--buffer
                search-term
-               dir
+               paths
                (or deadgrep--initial-filename
                    (buffer-file-name))))
          (last-results-buf (car-safe (deadgrep--buffers)))
@@ -1479,7 +1484,8 @@ don't actually start the search."
       (deadgrep--start
        search-term
        deadgrep--search-type
-       deadgrep--search-case))))
+       deadgrep--search-case
+       paths))))
 
 (defun deadgrep-next-error (arg reset)
   "Move to the next error.
