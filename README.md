@@ -1,9 +1,9 @@
-# deadgrep: use ripgrep from Emacs
+# Deadgrep: use ripgrep from Emacs
 
 Deadgrep is the fast, beautiful text search that your Emacs
 deserves.
 
- [![Build Status](https://travis-ci.org/Wilfred/deadgrep.svg?branch=master)](https://travis-ci.org/Wilfred/deadgrep) [![Coverage Status](https://coveralls.io/repos/github/Wilfred/deadgrep/badge.svg?branch=master)](https://coveralls.io/github/Wilfred/deadgrep?branch=master) [![MELPA](http://www.melpa.org/packages/deadgrep-badge.svg)](http://www.melpa.org/#/deadgrep)
+[![Coverage Status](https://coveralls.io/repos/github/Wilfred/deadgrep/badge.svg?branch=master)](https://coveralls.io/github/Wilfred/deadgrep?branch=master) [![MELPA](https://melpa.org/packages/deadgrep-badge.svg)](https://melpa.org/#/deadgrep)
 
 ![screenshot](docs/deadgrep_screenshot.png)
 

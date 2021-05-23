@@ -13,12 +13,6 @@
   (add-to-list 'load-path deadgrep-dir))
 
 (require 'undercover)
-(undercover "deadgrep.el"
-	    (:exclude "*-test.el")
-	    (:report-file "/tmp/undercover-report.json"))
-(undercover "deadgrep.el"
-	    (:exclude "*-test.el")
-            (:report-type :codecov)
-	    (:report-file "/tmp/undercover-report.json"))
+(undercover "deadgrep.el" (:exclude "*-test.el"))
 
 ;;; test-helper.el ends here

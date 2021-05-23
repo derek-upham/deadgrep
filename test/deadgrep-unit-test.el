@@ -121,6 +121,14 @@ some results."
     (eq (get-text-property (point) 'face)
         'deadgrep-match-face))))
 
+(ert-deftest deadgrep-visit-result ()
+  "`deadgrep-visit-result' should open the file at point."
+  (with-temp-deadgrep-buf
+   (deadgrep-forward-match)
+   (deadgrep-visit-result)
+   (let ((buf-name (buffer-file-name)))
+     (should (s-ends-with-p "deadgrep.el" buf-name)))))
+
 (ert-deftest deadgrep--split-line ()
   (-let* ((raw-line
            "[0m[35mdeadgrep.el[0m:[0m[32m123[0m:    (when ([0m[31m[1mbuffer-live[0m-p buffer)")
@@ -306,6 +314,10 @@ context arguments to ripgrep."
     "^[a-b]$"))
   (should
    (string=
+    (deadgrep--glob-regexp "[a]b")
+    "^[a]b$"))
+  (should
+   (string=
     (deadgrep--glob-regexp "[?]")
     "^[?]$")))
 
@@ -360,6 +372,14 @@ context arguments to ripgrep."
      (equal
       (deadgrep--buffer-position 2 1)
       6))))
+
+(ert-deftest deadgrep--buffer-position--preserves-point ()
+  "`deadgrep--buffer-position' should not move point."
+  (with-temp-buffer
+    (insert "foo\nbar\n")
+    (goto-char (point-min))
+    (deadgrep--buffer-position 2 1)
+    (should (equal (point) (point-min)))))
 
 (ert-deftest deadgrep--normalise-dirname--local-paths ()
   (if (eq system-type 'windows-nt)
@@ -440,17 +460,17 @@ edit mode."
 (ert-deftest deadgrep--arguments ()
   (should
    (equal (deadgrep--arguments "foo" 'regexp 'smart nil)
-          '("--color=ansi" "--line-number" "--no-heading" "--with-filename" "--smart-case" "--" "foo" ".")))
+          '("--color=ansi" "--line-number" "--no-heading" "--no-column" "--with-filename" "--smart-case" "--" "foo" ".")))
 
   (let ((deadgrep--file-type '(type . "elisp")))
     (should
      (equal (deadgrep--arguments "foo" 'string 'sensitive '(1 . 0))
-            '("--color=ansi" "--line-number" "--no-heading" "--with-filename" "--fixed-strings" "--case-sensitive" "--type=elisp" "--before-context=1" "--after-context=0" "--" "foo" "."))))
+            '("--color=ansi" "--line-number" "--no-heading" "--no-column" "--with-filename" "--fixed-strings" "--case-sensitive" "--type=elisp" "--before-context=1" "--after-context=0" "--" "foo" "."))))
 
   (let ((deadgrep--file-type '(glob . "*.el")))
     (should
      (equal (deadgrep--arguments "foo" 'words 'ignore '(3 . 2))
-            '("--color=ansi" "--line-number" "--no-heading" "--with-filename" "--fixed-strings" "--word-regexp" "--ignore-case" "--type-add=custom:*.el" "--type=custom" "--before-context=3" "--after-context=2" "--" "foo" ".")))))
+            '("--color=ansi" "--line-number" "--no-heading" "--no-column" "--with-filename" "--fixed-strings" "--word-regexp" "--ignore-case" "--type-add=custom:*.el" "--type=custom" "--before-context=3" "--after-context=2" "--" "foo" ".")))))
 
 (ert-deftest deadgrep--arguments-error-cases ()
   (should-error

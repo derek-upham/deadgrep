@@ -5,7 +5,7 @@
 ;; Author: Wilfred Hughes <me@wilfred.me.uk>
 ;; URL: https://github.com/Wilfred/deadgrep
 ;; Keywords: tools
-;; Version: 0.10
+;; Version: 0.11
 ;; Package-Requires: ((emacs "25.1") (dash "2.12.0") (s "1.11.0") (spinner "1.7.3"))
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -89,6 +89,13 @@ results buffers.
 
 In extreme cases (100KiB+ single-line files), we can get a stack
 overflow on our regexp matchers if we don't apply this.")
+
+(defvar deadgrep-display-buffer-function
+  'switch-to-buffer-other-window
+  "Function used to show the deadgrep result buffer.
+
+This function is called with one argument, the results buffer to
+display.")
 
 (defface deadgrep-meta-face
   '((t :inherit font-lock-comment-face))
@@ -381,11 +388,18 @@ with a text face property `deadgrep-match-face'."
   'action #'deadgrep--search-term
   'help-echo "Change search term")
 
+(defun deadgrep--search-prompt (&optional default)
+  "The prompt shown to the user when starting a deadgrep search."
+  (let ((kind (if (eq deadgrep--search-type 'regexp)
+                  "by regexp" "for text")))
+    (if default
+        (format "Search %s (default %s): " kind default)
+      (format "Search %s: " kind))))
+
 (defun deadgrep--search-term (_button)
   (setq deadgrep--search-term
-        ;; TODO: say string or regexp
         (read-from-minibuffer
-         "Search term: "
+         (deadgrep--search-prompt)
          deadgrep--search-term))
   (rename-buffer
    (deadgrep--buffer-name deadgrep--search-term default-directory) t)
@@ -497,7 +511,7 @@ with a text face property `deadgrep-match-face'."
             (cl-incf j)
             (setq result (concat result
                                  (substring glob i j)))
-            (setq i (1+ j))))
+            (setq i j)))
          (t
           (setq result (concat result (char-to-string char)))
           (cl-incf i)))))
@@ -614,6 +628,7 @@ to obtain ripgrep results."
     (push "--color=ansi" args)
     (push "--line-number" args)
     (push "--no-heading" args)
+    (push "--no-column" args)
     (push "--with-filename" args)
 
     (cond
@@ -911,24 +926,23 @@ Returns a list ordered by the most recently accessed."
   "Open PATH in a buffer, and return a cons cell
 \(BUF . OPENED). OPENED is nil if there was aleady a buffer for
 this path."
-  (save-match-data
-    (let* ((initial-buffers (buffer-list))
-           (opened nil)
-           ;; Skip running find-file-hook since it may prompt the user.
-           (find-file-hook nil)
-           ;; If we end up opening a buffer, don't bother with file
-           ;; variables. It prompts the user, and we discard the buffer
-           ;; afterwards anyway.
-           (enable-local-variables nil)
-           ;; Bind `auto-mode-alist' to nil, so we open the buffer in
-           ;; `fundamental-mode' if it isn't already open.
-           (auto-mode-alist nil)
-           ;; Use `find-file-noselect' so we still decode bytes from the
-           ;; underlying file.
-           (buf (save-match-data (find-file-noselect path))))
-      (unless (-contains-p initial-buffers buf)
-        (setq opened t))
-      (cons buf opened))))
+  (let* ((initial-buffers (buffer-list))
+         (opened nil)
+         ;; Skip running find-file-hook since it may prompt the user.
+         (find-file-hook nil)
+         ;; If we end up opening a buffer, don't bother with file
+         ;; variables. It prompts the user, and we discard the buffer
+         ;; afterwards anyway.
+         (enable-local-variables nil)
+         ;; Bind `auto-mode-alist' to nil, so we open the buffer in
+         ;; `fundamental-mode' if it isn't already open.
+         (auto-mode-alist nil)
+         ;; Use `find-file-noselect' so we still decode bytes from the
+         ;; underlying file.
+         (buf (find-file-noselect path)))
+    (unless (-contains-p initial-buffers buf)
+      (setq opened t))
+    (cons buf opened)))
 
 (defun deadgrep--propagate-change (beg end length)
   "Repeat the last modification to the results buffer in the
@@ -936,7 +950,7 @@ underlying file."
   ;; We should never be called outside an edit buffer, but be
   ;; defensive. Buggy functions in change hooks are painful.
   (when (eq major-mode 'deadgrep-edit-mode)
-    (save-excursion
+    (save-mark-and-excursion
       (goto-char beg)
       (-let* ((column (+ (deadgrep--current-column) length))
               (filename (deadgrep--filename))
@@ -944,16 +958,13 @@ underlying file."
               ((buf . opened) (deadgrep--find-file filename))
               (inserted (buffer-substring beg end)))
         (with-current-buffer buf
-          (save-excursion
+          (save-mark-and-excursion
             (save-restriction
               (widen)
               (goto-char
                (deadgrep--buffer-position line-number column))
-              (if (> length 0)
-                  ;; We removed chars in the results buffer, so remove.
-                  (delete-char (- length))
-                ;; We inserted something, so insert the same chars.
-                (insert inserted))))
+              (delete-char (- length))
+              (insert inserted)))
           ;; If we weren't visiting this file before, just save it and
           ;; close it.
           (when opened
@@ -1378,9 +1389,7 @@ for a string, offering the current word as a default."
              ;; TODO: prompt should say search string or search regexp
              ;; as appropriate.
              (prompt
-              (if sym
-                  (format "Search term (default %s): " sym-name)
-                "Search term: ")))
+              (deadgrep--search-prompt sym-name)))
         (setq search-term
               (read-from-minibuffer
                prompt nil nil nil 'deadgrep-history sym-name))
@@ -1461,31 +1470,32 @@ don't actually start the search."
         (setq prev-search-type deadgrep--search-type)
         (setq prev-search-case deadgrep--search-case)))
 
-    (switch-to-buffer-other-window buf)
+    (funcall deadgrep-display-buffer-function buf)
 
-    (setq imenu-create-index-function #'deadgrep--create-imenu-index)
-    (setq next-error-function #'deadgrep-next-error)
+    (with-current-buffer buf
+      (setq imenu-create-index-function #'deadgrep--create-imenu-index)
+      (setq next-error-function #'deadgrep-next-error)
 
-    ;; If we have previous search settings, apply them to our new
-    ;; search results buffer.
-    (when last-results-buf
-      (setq deadgrep--search-type prev-search-type)
-      (setq deadgrep--search-case prev-search-case))
+      ;; If we have previous search settings, apply them to our new
+      ;; search results buffer.
+      (when last-results-buf
+        (setq deadgrep--search-type prev-search-type)
+        (setq deadgrep--search-case prev-search-case))
 
-    (deadgrep--write-heading)
+      (deadgrep--write-heading)
 
-    (if current-prefix-arg
-        ;; Don't start the search, just create the buffer and inform
-        ;; the user how to start when they're ready.
-        (progn
-          (setq deadgrep--postpone-start t)
-          (deadgrep--write-postponed))
-      ;; Start the search immediately.
-      (deadgrep--start
-       search-term
-       deadgrep--search-type
-       deadgrep--search-case
-       paths))))
+      (if current-prefix-arg
+          ;; Don't start the search, just create the buffer and inform
+          ;; the user how to start when they're ready.
+          (progn
+            (setq deadgrep--postpone-start t)
+            (deadgrep--write-postponed))
+        ;; Start the search immediately.
+        (deadgrep--start
+         search-term
+         deadgrep--search-type
+         deadgrep--search-case
+         paths)))))
 
 (defun deadgrep-next-error (arg reset)
   "Move to the next error.
